@@ -26,7 +26,8 @@ TOK = re.compile(r'\\n|\\\\|\\\{|\{([0-9A-F]{4}|!!|!\?|♥|怒|汗)\}')
 KS = set(poc.HANGUL)
 GFX = {**{'CHAP%d.SS1' % n: 'CH0%d/CHAP%d.SS1' % (n, n) for n in range(1, 6)},       # work/gfx 이름 → 디스크 경로
        'OMAKE.SS1': 'OMAKE.SS1', 'BTCOM.GS8': 'BTCOM.GS8', 'IDO.GS8': 'MAP/IDO.GS8', 'KAI.GS8': 'MAP/KAI.GS8',
-       'SENHYO.GS8': 'BATTLE/SENHYO.GS8', 'SYUKEI.GS8': 'BATTLE/SYUKEI.GS8', 'FUIN.GS8': 'CH05/FUIN.GS8', 'STAT.GB8': 'STAT.GB8'}
+       'SENHYO.GS8': 'BATTLE/SENHYO.GS8', 'SYUKEI.GS8': 'BATTLE/SYUKEI.GS8', 'FUIN.GS8': 'CH05/FUIN.GS8', 'STAT.GB8': 'STAT.GB8',
+       'OPT.CSA': 'OPT.CSA'}                                                             # 타이틀 옵션(tools/gfx_opt.py)
 
 
 def squeeze(t):
@@ -225,7 +226,7 @@ def main():
     # ④ 그림(work/gfx — tools/gfx_*.py 가 만듦): 하위 폴더 포함 제자리.
     #    도구를 고치고 다시 안 돌려 옛 그림이 들어간 적이 있다(2026-09-28 «0%» 깨짐) → 빌드 때 항상 전부 다시 만든다
     import subprocess
-    for t in ('gfx_chap', 'gfx_btcom', 'gfx_sheet', 'gfx_fuin', 'gfx_omake', 'gfx_stat', 'gfx_mst'):
+    for t in ('gfx_chap', 'gfx_btcom', 'gfx_sheet', 'gfx_fuin', 'gfx_omake', 'gfx_stat', 'gfx_mst', 'gfx_opt'):
         subprocess.run([sys.executable, os.path.join(HERE, t + '.py')], check=True, stdout=subprocess.DEVNULL)
     gfx = {p: open(os.path.join(ROOT, 'work', 'gfx', f), 'rb').read() for f, p in GFX.items()
            if os.path.exists(os.path.join(ROOT, 'work', 'gfx', f))}
