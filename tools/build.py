@@ -6,6 +6,7 @@ r"""유나 3 한글 빌더 (2026-09-28)
   ② 대사(D…): 블록마다 번역문을 사용 끝 뒤에 덧붙이고 텍스트 자리(dat.text_refs)의 오프셋만 바꿈, B 갱신. 원문은 그대로 둔다.
           줄바꿈 뒤 탭 들여쓰기 = 원문 그 줄의 탭 수(줄이 늘면 마지막 값) — 탭은 창 종류별 고정(대사 6·지문 4·전투 11‥16)
   ③ BIN 문자열(B…): 제자리, 원래 바이트 이하, 뒤는 NUL
+  ④ 그림 work/gfx(tools/gfx_*.py) · ⑤ 동영상 자막 work/kr/*.CPK(tools/moviesub.py) — 둘 다 원래 섹터 안 제자리
   검사(하나라도 걸리면 빌드 중단): 줄 수 ≤ max(3, 원문) · 줄 폭 ≤ max(18, 원문 최장) 칸 · 글꼴 밖 글자 · 외자·{XXXX}·코드 모양 ·
        KS X 1001 밖 한글 · 블록 32KB·u16 넘침 · BIN 바이트 초과. 부호 뒤 공백 1칸은 뺀다(2칸 이상은 둔다). 반각 영숫자·부호는 전각으로.
   python tools/build.py            → 검사·통계
@@ -233,6 +234,12 @@ def main():
     mst = sorted(glob.glob(os.path.join(ROOT, 'work', 'gfx', 'MST', '*.CSA')))            # 승리·패배 조건(tools/gfx_mst.py) CH0N_MST###.CSA
     gfx.update({os.path.basename(p).replace('_', '/', 1): open(p, 'rb').read() for p in mst})
     print('그림 %d/%d + 조건 %d' % (len(gfx) - len(mst), len(GFX), len(mst)))
+    # ⑤ 동영상 자막(tools/moviesub.py 가 구운 work/kr/<영상>.CPK, 원본 크기 그대로 — 느려서 빌드 때 다시 굽지 않음)
+    import moviesub
+    mov = {moviesub.disc_path(os.path.basename(p)[:-4]): open(p, 'rb').read()
+           for p in sorted(glob.glob(os.path.join(ROOT, 'work', 'kr', '*.CPK')))}
+    print('동영상 %d개 %s' % (len(mov), sorted(mov)))
+    gfx.update(mov)
     iso.patch_sub(dst, gfx)
     print('→', dst)
 
