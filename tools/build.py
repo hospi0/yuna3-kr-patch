@@ -102,6 +102,80 @@ def lines_of(toks):
     return ls
 
 
+BST_TSV = os.path.join(ROOT, 'my files', 'tsv', 'bst_지형.tsv')
+BST_RE = re.compile(rb'(GND|OBS)\(([^()\r\n]*?)"([^"\r\n]*)"\)([ \t]*)')
+
+
+def load_bst():
+    """전투 맵 스크립트(*.BST, 원문 텍스트를 실행 중에 읽음) 지형 GND·장애물 OBS 이름 번역 {(명령, 원문): 번역}
+       (2026-09-30 실기 «道路» 한자 — 예전 조사에서 BST 의 SJIS 를 그림 잡음으로 보고 빠뜨렸다)"""
+    out = {}
+    for r in list(csv.reader(open(BST_TSV, encoding='utf-8'), delimiter='\t', quoting=csv.QUOTE_NONE))[1:]:
+        if len(r) >= 3 and r[2].strip():
+            out[(r[0], r[1])] = r[2].strip()
+    return out
+
+
+def bst_patch(enc_bst):
+    """디스크의 *.BST → 주석 아닌 GND/OBS 따옴표 안만 바꿈. 길이 차는 그 줄 «)» 뒤 공백으로 흡수(파일 크기 그대로)"""
+    D = disc.Disc(); out = {}; errs = []; n = 0; seen = set()
+    for name, l, s in D.walk():
+        if not name.upper().endswith('.BST'):
+            continue
+        b = D.read(l, s); nb = bytearray(); p = 0
+        for m in BST_RE.finditer(b):
+            ls = b.rfind(b'\n', 0, m.start()) + 1
+            if b[ls:m.start()].strip().startswith(b';'):
+                continue
+            try:
+                jp = m.group(3).decode('cp932')
+            except UnicodeDecodeError:
+                continue
+            key = (m.group(1).decode(), jp)
+            if key not in enc_bst:
+                if re.search(r'[぀-鿿]', jp):
+                    errs.append('BST %s 번역 없음 %s' % (name, key))
+                continue
+            new = enc_bst[key]; sp = len(m.group(4)); d = len(new) - len(m.group(3))
+            follow = b[m.end():m.end() + 1]
+            need = 0 if follow in (b'\r', b'\n', b'') else 1
+            if sp - d < need:
+                errs.append('BST %s %s «%s» %dB > 원래 %dB + 공백 %d' % (name, key[0], jp, len(new), len(m.group(3)), sp - need)); continue
+            nb += b[p:m.start(3)] + new + b'")' + b' ' * (sp - d); p = m.end(); n += 1; seen.add(key)
+        if p:
+            nb += b[p:]
+            assert len(nb) == len(b), name
+            if bytes(nb) != b:
+                out[name] = bytes(nb)
+    return out, errs, n, len(seen)
+
+
+def patch_name_skip(exe):
+    """★유닛 창·파티 목록 이름 = 0x0602772C 가 캐릭터 ID 별로 이름 앞 별칭을 «글자 수 하드코딩»으로 건너뛴다
+       (ID 5·7 = 5자 «おっとりの», 0x0D = 3, 0x19‥0x29 = 4, 0x0C·0x1C·0x1E·0x1F = 6, 0x0B·0x10·0x11 = 7,
+        0x43‥0x45 = «Ｃ»+이름+8B, 0x4D = «Ｅ»+이름+10B). 번역 이름표는 이미 이름만(names_map) → 건너뛰면 빈칸
+       (2026-09-30 실기 «시오리 이름 안 나옴»). 건너뛰기 0 + 접두 갈래 끔."""
+    g = bytearray(exe); L = 0x06004000
+    fix = {0x06027758: (0xE903, 0xE900), 0x06027772: (0xE904, 0xE900), 0x06027780: (0xE905, 0xE900),
+           0x0602779A: (0xE906, 0xE900), 0x060277AE: (0xE907, 0xE900),
+           0x06027856: (0x8D42, 0xA042),        # BT/S 0x060278DE → BRA (0x43‥0x45 «Ｃ» 갈래 안 탐, 지연 슬롯 그대로)
+           0x060278E0: (0x884D, 0x0008)}        # CMP/EQ #0x4D → CLRT (0x4D «Ｅ» 갈래 안 탐)
+    for a, (old, new) in fix.items():
+        assert struct.unpack_from('>H', g, a - L)[0] == old, hex(a)
+        struct.pack_into('>H', g, a - L, new)
+    return g
+
+
+def literal_keep(x, off):
+    """★BIN 문자열이 4바이트 정렬 안 된 자리에서 시작하고 그 정렬 워드가 포인터(0x060xxxxx·0x002xxxxx)면
+       앞 몇 바이트는 코드 리터럴(함수 주소)의 아래 절반 — 추출기가 «nlライン攻撃» 처럼 글로 잘못 붙였다.
+       그 바이트는 절대 바꾸면 안 된다(2026-09-30 실기: «nl»→전각 ｎｌ 로 리터럴 0x06006E6C 가 깨져 전투 뒤 크래시)"""
+    if off % 4 == 0:
+        return 0
+    v = struct.unpack_from('>I', x, off & ~3)[0]
+    return 4 - off % 4 if (0x06000000 <= v < 0x06100000 or 0x00200000 <= v < 0x00300000) else 0
+
+
 def glyph_index(exe, code):
     return struct.unpack_from('>H', exe, 0x0609A560 - 0x06004000 + 2 * (((code >> 8) - 0x81) * 0xC0 + (code & 0xFF)))[0] - 256
 
@@ -116,7 +190,16 @@ def main():
     print('번역: 대사 %d/%d · BIN %d/%d (%s)' % (
         sum(1 for i in tr if i[0] == 'D'), sum(1 for i in ids if i[0] == 'D'),
         sum(1 for i in tr if i[0] == 'B'), sum(1 for i in ids if i[0] == 'B'), TSV))
-    errs = []; toks = {}
+    errs = []; toks = {}; keep = {}
+    for i in list(tr):
+        if i[0] == 'B' and i in ids:
+            f, off, L = ids[i][1][0].split(':')
+            k = literal_keep(open(os.path.join(W, f), 'rb').read(), int(off, 16))
+            if k:
+                pre = ids[i][0][:k].decode('latin1')
+                keep[i] = k
+                if tr[i].startswith(pre):
+                    tr[i] = tr[i][k:]              # 번역자가 원문 앞 «nl»·«v(» 를 그대로 둔 것 → 떼고 뒤부터 쓴다
     for i, t in tr.items():
         if i not in ids:
             errs.append('%s 원문 ID 없음' % i); continue
@@ -134,8 +217,16 @@ def main():
             if over:
                 errs.append('%s 줄 폭 초과 %s (최대 %d칸)' % (i, over, maxw))
         toks[i] = tk
+    # ⓪' BST 지형·장애물 이름(최대 6자)
+    bst = load_bst(); btoks = {}
+    for k, t in bst.items():
+        tk, e = parse(t)
+        errs += ['BST %s %s' % (k, x) for x in e]
+        if len(tk) > 6:
+            errs.append('BST %s «%s» %d자 > 6' % (k, t, len(tk)))
+        btoks[k] = tk
     # ① 글꼴
-    used = sorted({t[1] for tk in toks.values() for t in tk if t[0] == 'g'}, key=poc.HANGUL.index)
+    used = sorted({t[1] for tk in list(toks.values()) + list(btoks.values()) for t in tk if t[0] == 'g'}, key=poc.HANGUL.index)
     pool = []
     for hi in range(0x81, 0x99):
         for lo in range(0x40, 0x100):
@@ -153,6 +244,9 @@ def main():
         struct.pack_into('<H', T, 2 * i, slot); F[slot * 128:(slot + 1) * 128] = poc.glyph(ch)
         code_of[ch] = struct.pack('>H', c)
     enc = {i: b''.join(code_of.get(t[1], b'??') if t[0] == 'g' else t[1] if t[0] == 'c' else b'\n' for t in tk) for i, tk in toks.items()}
+    enc_bst = {k: b''.join(code_of.get(t[1], b'??') if t[0] == 'g' else t[1] for t in tk) for k, tk in btoks.items()}
+    bst_files, e, nbst, nkind = bst_patch(enc_bst)
+    errs += e
     # ② 대사
     D = bytearray(open(os.path.join(W, 'YUNA3.DAT'), 'rb').read())
     newtext = collections.defaultdict(dict)                                     # 블록 → {옛 오프셋: 새 바이트}
@@ -193,12 +287,14 @@ def main():
         if i[0] != 'B':
             continue
         f, off, L = ids[i][1][0].split(':'); off, L = int(off, 16), int(L)
+        k = keep.get(i, 0); off += k; L -= k                    # 리터럴 조각은 원본 그대로
         if len(b) > L:
             errs.append('%s %s 자리 %dB < 번역 %dB' % (i, f, L, len(b))); continue
         if f not in bins:
             bins[f] = bytearray(open(os.path.join(W, f), 'rb').read())
         bins[f][off:off + L] = b + bytes(L - len(b))
-    print('한글 %d자 / 칸 %d · 바꾼 블록 %d · BIN %s' % (len(used), len(pool), nb, sorted(bins)))
+    bins['0.BIN'] = patch_name_skip(bins.setdefault('0.BIN', bytearray(exe)))
+    print('한글 %d자 / 칸 %d · 바꾼 블록 %d · BIN %s · BST 지형·장애물 %d곳(%d종) %d파일' % (len(used), len(pool), nb, sorted(bins), nbst, nkind, len(bst_files)))
     if errs:
         print('⛔검사 오류 %d건 (전체 목록 work/trans/errors.txt)' % len(errs))
         open(os.path.join(ROOT, 'work', 'trans', 'errors.txt'), 'w', encoding='utf-8').write('\n'.join(errs) + '\n')
@@ -240,6 +336,7 @@ def main():
            for p in sorted(glob.glob(os.path.join(ROOT, 'work', 'kr', '*.CPK')))}
     print('동영상 %d개 %s' % (len(mov), sorted(mov)))
     gfx.update(mov)
+    gfx.update(bst_files)                   # ⑥ 전투 맵 스크립트 지형·장애물 이름(파일 크기 그대로)
     iso.patch_sub(dst, gfx)
     print('→', dst)
 
