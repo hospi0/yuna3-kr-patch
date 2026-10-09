@@ -335,10 +335,12 @@ def main():
         bins[f][off:off + L] = b + bytes(L - len(b))
     bins['0.BIN'] = patch_name_skip(bins.setdefault('0.BIN', bytearray(exe)))
     # ★장 이동 화면 «白丘台女子校へ» 의 «へ» = LONGMAP.BIN 0x29B8 한 글자 문자열(포인터 0x2B90 한 곳, 0x002029B8)
-    #   → 가나 칸이 한글로 덮여 «굣» 으로 찍힘. 사용자: 번역하지 말고 아예 안 나오게(장소 이름만) → 빈 문자열
+    #   → 가나 칸이 한글로 덮여 «굣» 으로 찍힘. 사용자: 번역하지 말고 아예 안 나오게(장소 이름만)
+    #   ★빈 문자열로 두면 그 칸이 안 지워져 커서 옮길 때마다 앞 이름의 글자가 남는다(2026-10-09 «단련행성극/우»)
+    #     → 전각 공백(0x8140, 글리프 0 = 빈칸) — 0x06022E84 는 0 픽셀도 바탕색으로 쓰므로 그 칸을 지운다
     lm = bins.setdefault('LONGMAP.BIN', bytearray(open(os.path.join(W, 'LONGMAP.BIN'), 'rb').read()))
     assert bytes(lm[0x29B8:0x29BB]) == b'\x82\xd6\x00', 'LONGMAP «へ» 자리 다름'
-    lm[0x29B8:0x29BA] = b'\0\0'
+    lm[0x29B8:0x29BA] = b'\x81\x40'
     print('한글 %d자 / 칸 %d · 바꾼 블록 %d · BIN %s · BST 지형·장애물 %d곳(%d종) %d파일' % (len(used), len(pool), nb, sorted(bins), nbst, nkind, len(bst_files)))
     if errs:
         print('⛔검사 오류 %d건 (전체 목록 work/trans/errors.txt)' % len(errs))
