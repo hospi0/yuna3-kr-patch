@@ -27,6 +27,8 @@ def parse(d, s):
     while i < len(d) and d[i]:
         b = d[i]
         if (0x81 <= b <= 0x9F or 0xE0 <= b <= 0xEF) and i + 1 < len(d) and 0x40 <= d[i + 1] <= 0xFC and d[i + 1] != 0x7F:
+            if 0x9873 <= (b << 8 | d[i + 1]) <= 0x987B:     # 외자 !! !? ♥ 怒 汗 — 2026-10-08 «敵のレベルを選択してね♥» 가 이 때문에 빠짐
+                out.append('{%04X}' % (b << 8 | d[i + 1])); i += 2; continue
             try:
                 out.append(d[i:i + 2].decode('cp932'))
             except UnicodeDecodeError:

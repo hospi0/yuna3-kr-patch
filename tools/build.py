@@ -25,6 +25,19 @@ GAIJI = {'!!': 0x9873, '!?': 0x9874, '♥': 0x9876, '怒': 0x987A, '汗': 0x987B
 PUNCT = '！？。．、，…‥』」）!?.,~～' + ':;)]\'"' + '：；］｝】〉》”’・·〜♪♥'
 TOK = re.compile(r'\\n|\\\\|\\\{|\{([0-9A-F]{4}|!!|!\?|♥|怒|汗)\}')
 KS = set(poc.HANGUL)
+
+
+def _hand_glyph(rows, top):
+    """손으로 그린 글리프(16×16 4bpp, 단계 14) — rows 는 '#' 점, top = 시작 줄"""
+    b = bytearray(128)
+    for y, r in enumerate(rows):
+        for x, ch in enumerate(r):
+            if ch == '#':
+                b[(top + y) * 8 + x // 2] |= 14 << (4 if x % 2 == 0 else 0)
+    return bytes(b)
+
+
+EXTRA_GLYPH = {0x8143: _hand_glyph(['.##', '.##', '..#', '.#.'], 9)}     # ， — 원래 「、」(칸 1) 과 같은 자리(줄 9‥12, 왼쪽)
 GFX = {**{'CHAP%d.SS1' % n: 'CH0%d/CHAP%d.SS1' % (n, n) for n in range(1, 6)},       # work/gfx 이름 → 디스크 경로
        'OMAKE.SS1': 'OMAKE.SS1', 'BTCOM.GS8': 'BTCOM.GS8', 'IDO.GS8': 'MAP/IDO.GS8', 'KAI.GS8': 'MAP/KAI.GS8',
        'SENHYO.GS8': 'BATTLE/SENHYO.GS8', 'SYUKEI.GS8': 'BATTLE/SYUKEI.GS8', 'FUIN.GS8': 'CH05/FUIN.GS8', 'STAT.GB8': 'STAT.GB8',
@@ -81,7 +94,7 @@ def parse(t):
             ch = '　'
         elif 0x21 <= ord(ch) <= 0x7E:
             ch = chr(ord(ch) + 0xFEE0)
-        ch = {'＇': '’', '＂': '”', '－': '―'}.get(ch, ch)
+        ch = {'＇': '’', '＂': '”', '－': 'ー', '―': 'ー', '─': 'ー', '—': 'ー'}.get(ch, ch)   # 줄표 = 장음 ー(글꼴에 ― ─ 없음 → «?», 2026-10-08)
         try:
             b = ch.encode('cp932')
         except UnicodeEncodeError:
@@ -90,6 +103,21 @@ def parse(t):
             err.append('반각 글자 %r' % ch); continue
         out.append(('c', b))
     return out, err
+
+
+def src_width(l):
+    """원문 한 줄의 «화면 칸 수» — 2바이트 글자(외자 !! 포함) 1칸, 탭 들여쓰기 뺌"""
+    l = l.lstrip(b'\t'); n = i = 0
+    while i < len(l):
+        i += 2 if (0x81 <= l[i] <= 0x9F or 0xE0 <= l[i] <= 0xFC) else 1; n += 1
+    return n
+
+
+def line_limit(ol):
+    """줄 폭 한도 = 상자 폭 18칸(원문이 더 긴 줄을 쓴 경우만 그 길이).
+       ★예전엔 text_of 길이로 재서 외자 {9873}(!!) 이 6칸으로 잡혀 한도가 23까지 늘었다
+       → 초상화 창에서 오른쪽으로 넘친 줄 34개(2026-10-08 실기 «초상화 줄넘침»)"""
+    return max(LINE_W, max(src_width(l) for l in ol))
 
 
 def lines_of(toks):
@@ -209,8 +237,7 @@ def main():
         ol = raw.split(b'\n')
         nl = lines_of(tk)
         if i[0] == 'D':
-            ow = max(len(dat.text_of(l.lstrip(b'\t'))) for l in ol)             # 대략(외자 {XXXX} 는 길게 잡힘 → 넉넉)
-            maxw = max(LINE_W, min(ow, 24)); maxl = max(LINES, len(ol))
+            maxw = line_limit(ol); maxl = max(LINES, len(ol))
             if len(nl) > maxl:
                 errs.append('%s 줄 수 %d > %d' % (i, len(nl), maxl))
             over = [(k, len(l)) for k, l in enumerate(nl) if len(l) > maxw]
@@ -243,6 +270,19 @@ def main():
         c = poc.sjis_of(ch); i = glyph_index(exe, c)
         struct.pack_into('<H', T, 2 * i, slot); F[slot * 128:(slot + 1) * 128] = poc.glyph(ch)
         code_of[ch] = struct.pack('>H', c)
+    # ★원래 글꼴에 없는 부호(TBL = FFFF → 화면에 «?»): 쉼표 ，(0x8143) 는 남는 칸에 직접 그려 넣는다(2026-10-08 실기 «지?질»)
+    for (c, g), slot in zip(EXTRA_GLYPH.items(), pool[len(used):]):
+        struct.pack_into('<H', T, 2 * glyph_index(exe, c), slot); F[slot * 128:(slot + 1) * 128] = g
+    if len(used) + len(EXTRA_GLYPH) > len(pool):
+        errs.append('글리프 칸 부족(부호 포함)')
+    tblnew = struct.unpack('<6000H', bytes(T))
+    for i, tk in list(toks.items()) + [('BST %s' % (k,), v) for k, v in btoks.items()]:
+        miss = {t[1].decode('cp932', 'replace') for t in tk if t[0] == 'c' and len(t[1]) == 2 and t[1][0] >= 0x81
+                and not (0 <= glyph_index(exe, struct.unpack('>H', t[1])[0]) < 6000
+                         and tblnew[glyph_index(exe, struct.unpack('>H', t[1])[0])] != 0xFFFF)
+                and struct.unpack('>H', t[1])[0] not in GAIJI.values()}
+        if miss:
+            errs.append('%s 글꼴에 없는 글자(화면 «?») %s' % (i, ''.join(sorted(miss))))
     enc = {i: b''.join(code_of.get(t[1], b'??') if t[0] == 'g' else t[1] if t[0] == 'c' else b'\n' for t in tk) for i, tk in toks.items()}
     enc_bst = {k: b''.join(code_of.get(t[1], b'??') if t[0] == 'g' else t[1] for t in tk) for k, tk in btoks.items()}
     bst_files, e, nbst, nkind = bst_patch(enc_bst)

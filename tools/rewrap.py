@@ -17,8 +17,7 @@ def width(s):
 
 def limits(i):
     ol = applyfix.ids[i][0].split(b'\n')
-    ow = max(len(dat.text_of(l.lstrip(b'\t'))) for l in ol)
-    return max(build.LINE_W, min(ow, 24)), max(build.LINES, len(ol))
+    return build.line_limit(ol), max(build.LINES, len(ol))
 
 
 def cascade(lines, W):
@@ -90,7 +89,20 @@ def best(words, obrk, W, ML):
     return out[::-1]
 
 
+NOBREAK = ['파이 샨']                                       # 띄어 쓴 이름은 한 낱말로(2026-10-08 «파이\n샨「» 로 쪼개짐)
+
+
 def fix(i, t):
+    for nm in NOBREAK:
+        t = t.replace(nm, nm.replace(' ', '　'))
+    r = _fix(i, t)
+    if r:
+        for nm in NOBREAK:
+            r = r.replace(nm.replace(' ', '　'), nm)
+    return r
+
+
+def _fix(i, t):
     W, ML = limits(i)
     words = []; obrk = set()
     for x in t.split('\\n'):

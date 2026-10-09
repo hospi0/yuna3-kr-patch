@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 r"""손질 번역(ID \t 새 번역) 검사 → 통과분만 번역 폴더에 반영 (2026-09-29)
-  대사(D): 줄 수 ≤ max(3, 원문) · 줄 폭 ≤ max(18, 원문 최장, 상한 24) · 글자. BIN(B): 바이트 ≤ 원래 자리.
+  대사(D): 줄 수 ≤ max(3, 원문) · 줄 폭 ≤ build.line_limit(상자 18칸) · 글자. BIN(B): 바이트 ≤ 원래 자리.
   python tools/applyfix.py 번역폴더 손질.tsv [--write]"""
 import glob, os, sys
 HERE = os.path.dirname(os.path.abspath(__file__)); ROOT = os.path.dirname(HERE)
@@ -18,8 +18,7 @@ def check(i, t):
     raw = ids[i][0]
     if i[0] == 'D':
         ol = raw.split(b'\n'); nl = build.lines_of(tk)
-        ow = max(len(dat.text_of(l.lstrip(b'\t'))) for l in ol)
-        maxw = max(build.LINE_W, min(ow, 24)); maxl = max(build.LINES, len(ol))
+        maxw = build.line_limit(ol); maxl = max(build.LINES, len(ol))
         if len(nl) > maxl:
             errs.append('줄 %d > %d' % (len(nl), maxl))
         errs += ['%d번 줄 %d칸 > %d' % (k, len(l), maxw) for k, l in enumerate(nl) if len(l) > maxw]

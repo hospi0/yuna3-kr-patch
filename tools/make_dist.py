@@ -8,7 +8,7 @@ HERE = os.path.dirname(os.path.abspath(__file__)); ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 import disc
 
-VER = 'v0.9'
+VER = 'v0.91'
 XDELTA = r'C:\claude\utils\xdelta.exe'
 OUT = os.path.join(ROOT, 'work', 'out')
 NAME = 'Yuna3_KR_' + VER
@@ -67,12 +67,12 @@ BAT = r"""@echo off
 chcp 949 >nul
 set "XD=%~dp0xdelta.exe"
 if not exist "%~dp0{bin}" (
-  echo   [오류] 원본 트랙 1 파일을 이 폴더에 넣어 주세요(readme 참고).
+  echo   [오류] 원본 트랙 1 파일을 이 폴더에 넣어 주세요 - readme 참고.
   pause & exit /b 1
 )
 "%XD%" -d -f -s "%~dp0{bin}" "%~dp0{patch}" "%~dp0{kbin}"
 if errorlevel 1 (
-  echo   [오류] 패치 실패 - 원본이 다를 수 있습니다(readme 의 원본md5 확인).
+  echo   [오류] 패치 실패 - 원본이 다를 수 있습니다 - readme 의 원본md5 확인.
   pause & exit /b 1
 )
 echo   완료: "{kbin}"
