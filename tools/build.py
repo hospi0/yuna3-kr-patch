@@ -52,7 +52,10 @@ def squeeze(t):
 def load_translations():
     tr = {}
     for p in sorted(glob.glob(os.path.join(TSV, 'yuna3_*.tsv'))):
-        for r in list(csv.reader(open(p, encoding='utf-8'), delimiter='\t', quoting=csv.QUOTE_NONE))[1:]:
+        for n, r in enumerate(list(csv.reader(open(p, encoding='utf-8'), delimiter='\t', quoting=csv.QUOTE_NONE))[1:], 2):
+            # 번역 칸 안 «실제» 줄바꿈 → 뒷줄이 열 1개짜리 행으로 떨어져 조용히 버려졌다(2026-10-12 D01860 «그렇기 때문이다!!» 뒤 통삭제)
+            if 0 < len(r) < 6 and any(x.strip() for x in r):
+                sys.exit('⛔%s %d행: 열 %d개 — 번역 칸에 실제 줄바꿈? (\\n 으로 써야 함) «%s»' % (os.path.basename(p), n, len(r), r[0][:30]))
             if len(r) > 5 and r[5].strip():
                 if r[0] in tr and tr[r[0]] != r[5]:
                     sys.exit('⛔%s: 같은 ID 에 다른 번역' % r[0])
@@ -240,6 +243,12 @@ def main():
             maxw = line_limit(ol); maxl = max(LINES, len(ol))
             if len(nl) > maxl:
                 errs.append('%s 줄 수 %d > %d' % (i, len(nl), maxl))
+            over = [(k, len(l)) for k, l in enumerate(nl) if len(l) > maxw]
+            if over:
+                errs.append('%s 줄 폭 초과 %s (최대 %d칸)' % (i, over, maxw))
+        elif b'\n' in raw:
+            # BIN 대사 상자도 18칸 — 넘치면 끝 글자가 넘김 아이콘에 가린다(2026-10-12 B00622 «같습니다!!»)
+            maxw = line_limit(ol)
             over = [(k, len(l)) for k, l in enumerate(nl) if len(l) > maxw]
             if over:
                 errs.append('%s 줄 폭 초과 %s (최대 %d칸)' % (i, over, maxw))
