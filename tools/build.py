@@ -254,6 +254,21 @@ def main():
         btoks[k] = tk
     # ① 글꼴
     used = sorted({t[1] for tk in list(toks.values()) + list(btoks.values()) for t in tk if t[0] == 'g'}, key=poc.HANGUL.index)
+    # ★번역에 일본어 그대로 남긴 가나·한자(팬레터 투고자 이름 風村 沙葵 등, 2026-10-11 «한자 그대로 나오게»)는 원래 글리프 칸을 지킨다
+    kept = {struct.unpack('>H', t[1])[0] for tk in list(toks.values()) + list(btoks.values()) for t in tk
+            if t[0] == 'c' and len(t[1]) == 2 and struct.unpack('>H', t[1])[0] >= 0x829F}
+    keep_slot = {tbl0[glyph_index(exe, c)] for c in kept if 0 <= glyph_index(exe, c) < 6000}
+    # 한글 코드(poc.sjis_of — 1수준 한자 코드)가 남긴 한자와 겹치면 그 한글만 안 쓰는 한자 코드로 옮긴다
+    kcode = {ch: poc.sjis_of(ch) for ch in used}
+    taken = set(kcode.values()) | kept
+    clash = [ch for ch in used if kcode[ch] in kept]
+    cand = (hi << 8 | lo for hi in list(range(0x88, 0xA0)) + list(range(0xE0, 0xEA)) for lo in range(0x40, 0xFD) if lo != 0x7F)
+    for ch in clash:
+        for c in cand:
+            if c not in taken and 0 <= glyph_index(exe, c) < 6000:
+                kcode[ch] = c; taken.add(c); break
+        else:
+            errs.append('한글 코드 옮길 자리 없음 %s' % ch)
     pool = []
     for hi in range(0x81, 0x99):
         for lo in range(0x40, 0x100):
@@ -261,13 +276,13 @@ def main():
             if c > 0x987E or not (0x829F <= c):                               # 히라가나(829F~)부터 = 가나·한자
                 continue
             i = glyph_index(exe, c)
-            if 0 <= i < 6000 and tbl0[i] != 0xFFFF and tbl0[i] not in pool and tbl0[i] < 1301:
+            if 0 <= i < 6000 and tbl0[i] != 0xFFFF and tbl0[i] not in pool and tbl0[i] < 1301 and tbl0[i] not in keep_slot:
                 pool.append(tbl0[i])
     if len(used) > len(pool):
         errs.append('글리프 칸 부족: 한글 %d자 > 칸 %d' % (len(used), len(pool)))
     code_of = {}
     for ch, slot in zip(used, pool):
-        c = poc.sjis_of(ch); i = glyph_index(exe, c)
+        c = kcode[ch]; i = glyph_index(exe, c)
         struct.pack_into('<H', T, 2 * i, slot); F[slot * 128:(slot + 1) * 128] = poc.glyph(ch)
         code_of[ch] = struct.pack('>H', c)
     # ★원래 글꼴에 없는 부호(TBL = FFFF → 화면에 «?»): 쉼표 ，(0x8143) 는 남는 칸에 직접 그려 넣는다(2026-10-08 실기 «지?질»)
@@ -332,6 +347,10 @@ def main():
             errs.append('%s %s 자리 %dB < 번역 %dB' % (i, f, L, len(b))); continue
         if f not in bins:
             bins[f] = bytearray(open(os.path.join(W, f), 'rb').read())
+        if f == 'LONGMAP.BIN' and 'B00910' <= i <= 'B00937':
+            # ★장 이동 화면 장소 이름은 칸을 안 지우고 덮어씀 → 일본어보다 짧으면 앞 이름 글자가 남는다
+            #   (2026-10-11 «천성터기/천성터성», 天星跡地) → 원래 글자 수(자리 바이트÷2)까지 전각 공백(글리프 0 = 지움)
+            b = b + b'\x81\x40' * ((L - len(b)) // 2)
         bins[f][off:off + L] = b + bytes(L - len(b))
     bins['0.BIN'] = patch_name_skip(bins.setdefault('0.BIN', bytearray(exe)))
     # ★장 이동 화면 «白丘台女子校へ» 의 «へ» = LONGMAP.BIN 0x29B8 한 글자 문자열(포인터 0x2B90 한 곳, 0x002029B8)
