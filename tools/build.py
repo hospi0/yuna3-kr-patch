@@ -7,6 +7,7 @@ r"""유나 3 한글 빌더 (2026-09-28)
           줄바꿈 뒤 탭 들여쓰기 = 원문 그 줄의 탭 수(줄이 늘면 마지막 값) — 탭은 창 종류별 고정(대사 6·지문 4·전투 11‥16)
   ③ BIN 문자열(B…): 제자리, 원래 바이트 이하, 뒤는 NUL
   ④ 그림 work/gfx(tools/gfx_*.py) · ⑤ 동영상 자막 work/kr/*.CPK(tools/moviesub.py) — 둘 다 원래 섹터 안 제자리
+  ⑦ 타이틀 대기 «전작 줄거리» 음성 자막 훅 = DIGEST.BIN(tools/digest_sub.py, 자막 표 work/digest/digest_sub.tsv) — 커져서 트랙 끝으로 옮겨짐
   검사(하나라도 걸리면 빌드 중단): 줄 수 ≤ max(3, 원문) · 줄 폭 ≤ max(18, 원문 최장) 칸 · 글꼴 밖 글자 · 외자·{XXXX}·코드 모양 ·
        KS X 1001 밖 한글 · 블록 32KB·u16 넘침 · BIN 바이트 초과. 부호 뒤 공백 1칸은 뺀다(2칸 이상은 둔다). 반각 영숫자·부호는 전각으로.
   python tools/build.py            → 검사·통계
@@ -392,6 +393,12 @@ def main():
         print('검사 끝 — 쓰려면 --write'); return
     files = {'YUNA3.DAT': bytes(D), 'YUNA3.FON': bytes(F), 'YUNA3.TBL': bytes(T)}
     files.update({f: bytes(b) for f, b in bins.items()})
+    # ⑦ 타이틀 대기 «전작 줄거리» 음성 자막 훅(tools/digest_sub.py — DIGEST.BIN 안에서만, 흉내기 검산 통과해야)
+    import digest_sub
+    dg, dinfo = digest_sub.build(); digest_sub.check(dg, dinfo)
+    assert 'DIGEST.BIN' not in files
+    files['DIGEST.BIN'] = dg
+    print('줄거리 자막 %d개 · DIGEST.BIN %d B' % (len(dinfo['R']), len(dg)))
     os.makedirs(OUT, exist_ok=True)
     dst = os.path.join(OUT, os.path.basename(disc.ROM))
     iso.patch(disc.ROM, dst, files); iso.verify(dst, files)

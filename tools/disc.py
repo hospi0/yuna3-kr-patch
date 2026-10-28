@@ -5,7 +5,7 @@ r"""은하 아가씨 전설 유나 3 — 디스크(트랙 1, MODE1/2352) ISO9660
 """
 import os, struct, sys
 HERE = os.path.dirname(os.path.abspath(__file__)); ROOT = os.path.dirname(HERE)
-ROM = r'C:\claude\roms\ss\완료\Ginga Ojousama Densetsu Yuna 3 - Lightning Angel (Japan)\Ginga Ojousama Densetsu Yuna 3 - Lightning Angel (Japan) (Track 1).bin'
+ROM = r'D:\hospi\My Documents\한글패치\SS\ss\Ginga Ojousama Densetsu Yuna 3 - Lightning Angel (Japan)\Ginga Ojousama Densetsu Yuna 3 - Lightning Angel (Japan) (Track 1).bin'   # 2026-10-28 롬 위치 이동(읽기만)
 OUT = os.path.join(ROOT, 'work', 'disc')
 
 

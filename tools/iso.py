@@ -65,7 +65,9 @@ def patch(src, dst, files, force_move=(), log=print):
     with open(dst, 'r+b') as fh:
         dl, dirdata, ents = entries(fh)
         E = {nm: (l, s, off) for nm, l, s, off in ents}
-        end = max(l + (s + 2047) // 2048 for _, l, s, _ in ents)      # 파일 영역 끝(뒷간격 시작)
+        # 파일 영역 끝 = 하위 폴더까지 트랙 1 안 파일의 마지막 섹터 뒤(뒷간격 시작). ★2026-10-28: 예전엔 루트만·CDDA 항목(오디오 트랙)까지 셈 →
+        #   옮긴 파일이 트랙 밖 LBA 로 감. 옮겨도 뒷간격(150) 안에 들어가면 트랙 크기 그대로(오디오 트랙 위치 안 밀림).
+        end = max(l + max(1, (s + 2047) // 2048) for l, s, _, _ in tree(fh).values() if l < total)
         post = total - end
         cur = end
         moved = []
@@ -86,7 +88,15 @@ def patch(src, dst, files, force_move=(), log=print):
         for k in range(len(dirdata) // 2048):                            # 디렉터리
             fh.seek((dl + k) * 2352); fh.write(sector(dl + k, dirdata[k * 2048:(k + 1) * 2048]))
         grow = cur - end
-        if grow:
+        if grow and cur <= total:                                         # 뒷간격 안에 들어감 → 트랙 크기 그대로(2026-10-28 유나 3 DIGEST.BIN)
+            pvd = bytearray(read_user(fh, 16))
+            vs = struct.unpack_from('<I', pvd, 80)[0]
+            if cur > vs:
+                struct.pack_into('<I', pvd, 80, cur); struct.pack_into('>I', pvd, 84, cur)
+                fh.seek(16 * 2352); fh.write(sector(16, pvd))
+            log('  뒷간격 %d → %d 섹터 사용(볼륨 크기 %d → %d)' % (post, total - cur, vs, max(vs, cur)))
+            post = total - cur
+        elif grow:
             pvd = bytearray(read_user(fh, 16))
             vs = struct.unpack_from('<I', pvd, 80)[0] + grow
             struct.pack_into('<I', pvd, 80, vs); struct.pack_into('>I', pvd, 84, vs)
